@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Abyssal Glass — Biophotonic Fiber Project</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">ABYSSAL GLASS</span>
+  <a class="navlink active" href="index.html">Overview</a>
+  <a class="navlink" href="fiber.html">Fiber lab</a>
+  <a class="navlink" href="cable.html">Cable lab</a>
+  <a class="navlink" href="log.html">Log &amp; analysis</a>
+</nav>
+<div class="wrap">
+  <header class="page-head">
+    <p class="eyebrow">DESIGN THINKING PROTOTYPE // MARINE OPTICS DIVISION</p>
+    <h1>Abyssal Glass — biomimetic biophotonic fiber</h1>
+    <p class="sub">A biophotonic optical fiber grown at room temperature from deep-sea glass sponge biology (<em>Euplectella aspergillum</em>), tested against real subsea cable conditions using rules drawn from peer-reviewed literature rather than assumption.</p>
+  </header>
+
+  <div class="panel">
+    <h2 class="section-title">The idea in short</h2>
+    <p style="font-size:14px;line-height:1.7;color:var(--text);">
+      Conventional optical fiber requires melting ultra-pure silica at ~2000°C, and rigid quartz is prone to catastrophic micro-fracture. The sponge <em>Euplectella aspergillum</em> grows concentric silica spicules at 4°C using the enzyme silicatein, with thin organic interlayers that deflect cracks instead of letting them propagate. This project translates that mechanism into a lab-stage optical fiber design, and this site is the interactive test model — not a claim that the physical fiber has been built.
+    </p>
+  </div>
+
+  <div class="linkcards">
+    <a class="linkcard" href="fiber.html">
+      <h3>Fiber lab →</h3>
+      <p>Rotate and inspect the 8-layer fiber core in 3D, swap materials per layer, run crack-deflection tests against a quartz baseline, and work through the Group B validation experiments with literature citations.</p>
+    </a>
+    <a class="linkcard" href="cable.html">
+      <h3>Cable lab →</h3>
+      <p>Rotate and inspect the full 8-layer subsea cable assembly in 3D, run anchor strike / pressure / abrasion tests against the armor rule set, independent of the fiber core inside it.</p>
+    </a>
+  </div>
+
+  <div class="panel" style="margin-top:22px;">
+    <h2 class="section-title">How this was built</h2>
+    <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">
+      Both labs use real WebGL 3D (Three.js) — the models are draggable and zoomable, not flat images. Every rule the test engine follows is tagged with the paper it's drawn from; click a citation tag in either lab to see the source. Static files only — open directly in a browser, or drop into a repo and deploy anywhere that serves static HTML.
+    </p>
+  </div>
+</div>
+</body>
+</html>

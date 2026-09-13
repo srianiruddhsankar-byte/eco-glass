@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cable Lab — Abyssal Glass</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">ABYSSAL GLASS</span>
+  <a class="navlink" href="index.html">Overview</a>
+  <a class="navlink" href="fiber.html">Fiber lab</a>
+  <a class="navlink active" href="cable.html">Cable lab</a>
+  <a class="navlink" href="log.html">Log &amp; analysis</a>
+</nav>
+<div class="wrap">
+  <header class="page-head">
+    <p class="eyebrow">CABLE LAB</p>
+    <h1>Full subsea cable assembly</h1>
+    <p class="sub">Drag to rotate, scroll to zoom, click a layer to inspect or swap its material. This tests the armor around your fiber — anchors, trawlers, crush pressure, abrasion — separately from the fiber's own material rules.</p>
+  </header>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2 class="section-title">3D cable cross-section</h2>
+      <div id="canvas-wrap"><div class="canvas-hint">drag to rotate · scroll to zoom · click a layer</div></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="panel">
+      <h2 class="section-title">Selected layer</h2>
+      <div id="detailCard" class="detail-card"></div>
+      <div id="detailCardEmpty" style="font-size:13px;color:var(--text-dim);">Click a layer in the 3D view or legend to inspect it.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 class="section-title">Test conditions</h2>
+    <div class="presets" id="presets"></div>
+    <div class="grid3">
+      <div class="ctl-group">
+        <label>Depth / pressure <span class="val" id="depthVal"></span></label>
+        <input type="range" id="depth" min="0" max="6000" step="100" oninput="onSliderMove()">
+        <div class="slider-hint-toggle" onclick="window.toggleHint('hint-depth')">what does this control?</div>
+        <div class="slider-hint" id="hint-depth">0 m ≈ surface, 6000 m ≈ near the deepest transoceanic cable routes. Higher depth means more hydrostatic pressure squeezing the cable, tested against the copper/aluminum tube's crush threshold (rule C3). Same 0–6000 m scale as the Fiber lab, so runs are comparable across both.</div>
+      </div>
+      <div class="ctl-group">
+        <label>Anchor / trawler force <span class="val" id="anchorVal"></span></label>
+        <input type="range" id="anchor" min="0" max="100" step="5" oninput="onSliderMove()">
+        <div class="slider-hint-toggle" onclick="window.toggleHint('hint-anchor')">what does this control?</div>
+        <div class="slider-hint" id="hint-anchor">0 = no external mechanical contact. 100 = the top of the range this simulator uses for a direct anchor drag or trawl-net snag — a sudden, one-time force rather than gradual wear. It's tested against the steel wire armor's tensile capacity (rule C1), the one hard cutoff in this simulator: exceed it and the cable is severed regardless of any other layer.</div>
+      </div>
+      <div class="ctl-group">
+        <label>Seabed abrasion activity <span class="val" id="abrVal"></span></label>
+        <input type="range" id="abr" min="0" max="100" step="5" oninput="onSliderMove()">
+        <div class="slider-hint-toggle" onclick="window.toggleHint('hint-abr')">what does this control?</div>
+        <div class="slider-hint" id="hint-abr">Represents ongoing wear from current movement, sediment, and marine growth against the outer jacket over time — gradual, not a one-time impact like anchor force. Tested against the jacket's abrasion capacity (rule C4); failing this means slow wear-through, not an instant break.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2 class="section-title">Armor rules (ITU-T G.978 framework, cited)</h2>
+      <div id="rulesList"></div>
+    </div>
+    <div class="panel">
+      <button class="run-btn" onclick="runTest()">Run test</button>
+      <div class="results">
+        <div class="stat"><div class="k">TENSILE MARGIN</div><div class="v" id="rTensile">—</div></div>
+        <div class="stat"><div class="k">CRUSH MARGIN</div><div class="v" id="rCrush">—</div></div>
+        <div class="stat"><div class="k">FAILURE RISK</div><div class="v" id="rRisk">—</div></div>
+      </div>
+      <div class="verdict" id="verdict"></div>
+      <div style="height:220px;margin-top:18px;"><canvas id="cableTestChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 class="section-title">Test log <a href="log.html" style="font-weight:400;text-transform:none;color:var(--bio);">— rename, organize and chart all runs →</a></h2>
+    <div class="log" id="log"><div class="entry" style="color:var(--text-dim)">No tests run yet.</div></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/chart.js@4.4.4/dist/chart.umd.js"></script>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { cableLayers, cableRules, citations, saveLogEntry } from "./shared.js";
+
+/* alt materials pool for exploration — properties are illustrative, not manufacturer datasheets */
+const armorMaterials = {
+  steel:        { label: "Galvanized steel", color: 0x378add, tensile: 1.0, crush: 0.8, abrasion: 0.7 },
+  kevlarWire:   { label: "Kevlar wire weave", color: 0xef9f27, tensile: 0.85, crush: 0.5, abrasion: 0.9 },
+  titanium:     { label: "Titanium alloy", color: 0x85b7eb, tensile: 1.3, crush: 1.1, abrasion: 0.95 },
+  aluminum:     { label: "Aluminum", color: 0xb4b2a9, tensile: 0.5, crush: 0.6, abrasion: 0.5 },
+  copper:       { label: "Copper", color: 0xef9f27, tensile: 0.4, crush: 0.55, abrasion: 0.45 },
+  polyethylene: { label: "Polyethylene", color: 0x2c2c2a, tensile: 0.15, crush: 0.25, abrasion: 0.6 },
+  polyurethane: { label: "Polyurethane", color: 0x412402, tensile: 0.2, crush: 0.3, abrasion: 0.85 },
+  mylar:        { label: "Mylar tape", color: 0x63625c, tensile: 0.1, crush: 0.15, abrasion: 0.3 },
+  glassFiber:   { label: "Bio-fiber bundle (see Fiber lab)", color: 0x5dcaa5, tensile: 0.05, crush: 0.1, abrasion: 0.1 }
+};
+const defaultAssign = ["polyethylene", "mylar", "steel", "aluminum", "polyurethane", "copper", "polyurethane", "glassFiber"];
+let layerState = [...defaultAssign];
+let selectedLayer = null;
+const N = cableLayers.length;
+
+const outerR = 2.0, innerR = 0.12;
+const layerR = [];
+for (let i = 0; i < N; i++) {
+  const rOuter = outerR * cableLayers[i].r;
+  const rInner = i < N - 1 ? outerR * cableLayers[i + 1].r : innerR;
+  layerR.push({ rOuter, rInner });
+}
+const DEPTH = 1.4;
+const WEDGE = Math.PI * 1.5;
+
+const wrap = document.getElementById('canvas-wrap');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, wrap.clientWidth / wrap.clientHeight, 0.1, 100);
+camera.position.set(4, 3.2, 5);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+wrap.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const dir1 = new THREE.DirectionalLight(0xffffff, 1.15); dir1.position.set(5, 6, 4); scene.add(dir1);
+const dir2 = new THREE.DirectionalLight(0x378add, 0.4); dir2.position.set(-4, -2, -3); scene.add(dir2);
+const dir3 = new THREE.DirectionalLight(0xfff2d9, 0.3); dir3.position.set(0, -5, 3); scene.add(dir3);
+scene.fog = new THREE.FogExp2(0x02090f, 0.045);
+
+const cableGroup = new THREE.Group();
+scene.add(cableGroup);
+const meshes = [];
+
+/* ---------- procedural textures ----------
+   Real subsea cable armor is visually nothing like the glass fiber core: braided
+   steel wire, ribbed plastic jacket, foil tape, brushed metal tube. Each gets its
+   own generated pattern so the cable reads as an industrial assembly, not a
+   re-skinned copy of the fiber lab's rings. */
+const texCache = {};
+function braidTexture(hexColor) {
+  const key = 'braid-' + hexColor;
+  if (texCache[key]) return texCache[key];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const col = new THREE.Color(hexColor);
+  ctx.fillStyle = `rgb(${col.r*255|0},${col.g*255|0},${col.b*255|0})`;
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 3;
+  for (let o = -128; o < 256; o += 14) { ctx.beginPath(); ctx.moveTo(o, 0); ctx.lineTo(o + 128, 128); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  for (let o = -128; o < 256; o += 14) { ctx.beginPath(); ctx.moveTo(o + 7, 0); ctx.lineTo(o - 121, 128); ctx.stroke(); }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(6, 3);
+  texCache[key] = tex; return tex;
+}
+function ribbedTexture(hexColor) {
+  const key = 'rib-' + hexColor;
+  if (texCache[key]) return texCache[key];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const col = new THREE.Color(hexColor);
+  ctx.fillStyle = `rgb(${col.r*255|0},${col.g*255|0},${col.b*255|0})`;
+  ctx.fillRect(0, 0, 128, 128);
+  for (let x = 0; x < 128; x += 6) {
+    ctx.fillStyle = (x / 6) % 2 === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.12)';
+    ctx.fillRect(x, 0, 3, 128);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(8, 2);
+  texCache[key] = tex; return tex;
+}
+function foilTexture(hexColor) {
+  const key = 'foil-' + hexColor;
+  if (texCache[key]) return texCache[key];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const col = new THREE.Color(hexColor);
+  ctx.fillStyle = `rgb(${col.r*255|0},${col.g*255|0},${col.b*255|0})`;
+  ctx.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 400; i++) {
+    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)';
+    ctx.fillRect(Math.random() * 128, Math.random() * 128, 6, 1);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(4, 4);
+  texCache[key] = tex; return tex;
+}
+function brushedTexture(hexColor) {
+  const key = 'brush-' + hexColor;
+  if (texCache[key]) return texCache[key];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const col = new THREE.Color(hexColor);
+  ctx.fillStyle = `rgb(${col.r*255|0},${col.g*255|0},${col.b*255|0})`;
+  ctx.fillRect(0, 0, 128, 128);
+  for (let y = 0; y < 128; y++) {
+    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.12})`;
+    ctx.fillRect(0, y, 128, 1);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(3, 3);
+  texCache[key] = tex; return tex;
+}
+function textureFor(matKey, hexColor) {
+  if (['steel', 'kevlarWire', 'titanium'].includes(matKey)) return braidTexture(hexColor);
+  if (['polyethylene', 'polyurethane'].includes(matKey)) return ribbedTexture(hexColor);
+  if (matKey === 'mylar') return foilTexture(hexColor);
+  if (['aluminum', 'copper'].includes(matKey)) return brushedTexture(hexColor);
+  return ringGrainForGlass(hexColor);
+}
+function ringGrainForGlass(hexColor) {
+  const key = 'glassring-' + hexColor;
+  if (texCache[key]) return texCache[key];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const col = new THREE.Color(hexColor);
+  ctx.fillStyle = `rgb(${col.r*255|0},${col.g*255|0},${col.b*255|0})`;
+  ctx.fillRect(0, 0, 128, 128);
+  for (let y = 0; y < 128; y += 3) {
+    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.08})`;
+    ctx.fillRect(0, y, 128, 1);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(3, 3);
+  texCache[key] = tex; return tex;
+}
+function makeArmorMaterial(matKey) {
+  const mat = armorMaterials[matKey];
+  const tex = textureFor(matKey, mat.color);
+  const metallic = ['steel', 'titanium', 'aluminum', 'copper', 'kevlarWire'].includes(matKey);
+  if (matKey === 'glassFiber') {
+    return new THREE.MeshPhysicalMaterial({
+      color: mat.color, map: tex, bumpMap: tex, bumpScale: 0.008,
+      roughness: 0.2, transmission: 0.5, thickness: 0.5, ior: 1.46, transparent: true, opacity: 0.95
+    });
+  }
+  return new THREE.MeshStandardMaterial({
+    color: mat.color, map: tex, bumpMap: tex,
+    bumpScale: metallic ? 0.02 : 0.035,
+    roughness: metallic ? 0.35 : 0.75,
+    metalness: metallic ? 0.85 : 0.05
+  });
+}
+
+function annularSectorShape(rOuter, rInner, thetaLength) {
+  const shape = new THREE.Shape();
+  const segs = 40;
+  shape.moveTo(rOuter, 0);
+  for (let i = 1; i <= segs; i++) {
+    const a = (i / segs) * thetaLength;
+    shape.lineTo(Math.cos(a) * rOuter, Math.sin(a) * rOuter);
+  }
+  for (let i = 0; i <= segs; i++) {
+    const a = thetaLength - (i / segs) * thetaLength;
+    shape.lineTo(Math.cos(a) * rInner, Math.sin(a) * rInner);
+  }
+  shape.closePath();
+  return shape;
+}
+
+function buildCable() {
+  meshes.forEach(m => {
+    cableGroup.remove(m.group);
+    m.mesh.geometry.dispose();
+    m.mesh.material.dispose();
+  });
+  meshes.length = 0;
+  for (let i = 0; i < N; i++) {
+    const { rOuter, rInner } = layerR[i];
+    const shape = annularSectorShape(rOuter, Math.max(rInner, 0.001), WEDGE);
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: DEPTH, bevelEnabled: false, curveSegments: 24 });
+    const material = makeArmorMaterial(layerState[i]);
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.position.z = -DEPTH / 2;
+    mesh.userData.layerIndex = i;
+    const g = new THREE.Group(); g.add(mesh);
+    cableGroup.add(g);
+    // pull straight toward the viewer instead of sideways, so exploded layers
+    // clear the stack instead of overlapping whichever layer sits next to them
+    meshes.push({ mesh, group: g, restPos: new THREE.Vector3(0,0,0),
+      explodedPos: new THREE.Vector3(0, 0, 0.55 + i * 0.12) });
+  }
+  cableGroup.rotation.x = -0.5;
+  cableGroup.rotation.y = 0.5;
+}
+buildCable();
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(meshes.map(m => m.mesh));
+  if (hits.length) selectLayer(hits[0].object.userData.layerIndex);
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  meshes.forEach((m, i) => {
+    const target = (selectedLayer === i) ? m.explodedPos : m.restPos;
+    m.group.position.lerp(target, 0.15);
+  });
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+window.addEventListener('resize', () => {
+  camera.aspect = wrap.clientWidth / wrap.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+});
+
+function selectLayer(i) { selectedLayer = (selectedLayer === i) ? null : i; renderLegend(); renderDetail(); }
+function renderLegend() {
+  document.getElementById('legend').innerHTML = cableLayers.map((L, i) => {
+    const mat = armorMaterials[layerState[i]];
+    const hex = '#' + mat.color.toString(16).padStart(6, '0');
+    return `<div class="row ${selectedLayer===i?'active':''}" onclick="window.selectLayerFromUI(${i})">
+      <span class="sw" style="background:${hex}"></span>${L.name} — ${mat.label}</div>`;
+  }).join('');
+}
+window.selectLayerFromUI = (i) => selectLayer(i);
+
+function renderDetail() {
+  const card = document.getElementById('detailCard');
+  const empty = document.getElementById('detailCardEmpty');
+  if (selectedLayer === null) { card.style.display = 'none'; empty.style.display = 'block'; return; }
+  empty.style.display = 'none'; card.style.display = 'block';
+  const L = cableLayers[selectedLayer];
+  const mat = armorMaterials[layerState[selectedLayer]];
+  const opts = Object.keys(armorMaterials).map(k =>
+    `<option value="${k}" ${k===layerState[selectedLayer]?'selected':''}>${armorMaterials[k].label}</option>`).join('');
+  card.innerHTML = `<b>${L.name}</b><br>${L.desc}<br><span style="color:var(--text-dim)">Current: ${mat.label}</span>
+    <select onchange="window.setLayerMat(${selectedLayer}, this.value)">${opts}</select>`;
+}
+window.setLayerMat = (i, val) => { layerState[i] = val; buildCable(); renderLegend(); renderDetail(); };
+
+const presets = {
+  "Shelf trawler zone": { depth: 200, anchor: 75, abr: 55 },
+  "Abyssal plain": { depth: 5500, anchor: 5, abr: 10 },
+  "Coastal shipping lane": { depth: 60, anchor: 90, abr: 40 }
+};
+document.getElementById('presets').innerHTML = Object.keys(presets).map(n =>
+  `<button class="preset-btn" id="pb-${n.replace(/\s/g,'')}" onclick="window.applyPreset('${n}')">${n}</button>`).join('');
+window.applyPreset = (name) => {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('pb-' + name.replace(/\s/g,'')).classList.add('active');
+  const p = presets[name];
+  document.getElementById('depth').value = p.depth;
+  document.getElementById('anchor').value = p.anchor;
+  document.getElementById('abr').value = p.abr;
+  onSliderMove();
+};
+window.onSliderMove = () => {
+  document.getElementById('depthVal').textContent = document.getElementById('depth').value + ' m';
+  const a = document.getElementById('anchor').value;
+  document.getElementById('anchorVal').textContent = a == 0 ? '0 (none)' : a;
+  document.getElementById('abrVal').textContent = document.getElementById('abr').value + '%';
+};
+
+document.getElementById('rulesList').innerHTML = cableRules.map(r => {
+  const cite = r.cite ? citations[r.cite] : null;
+  return `<div class="rule" id="rule-${r.id}"><span class="tag">${r.id}</span>
+    <span>${r.text}${cite ? `<span class="cite-link" onclick="window.toggleCite('${r.id}')">[source]</span>
+      <div class="cite-box" id="cite-${r.id}"><b>${cite.label}</b><br>${cite.note}</div>` : ''}</span></div>`;
+}).join('');
+window.toggleCite = (id) => {
+  const box = document.getElementById('cite-' + id);
+  box.style.display = box.style.display === 'block' ? 'none' : 'block';
+};
+window.toggleHint = (id) => {
+  const box = document.getElementById(id);
+  box.style.display = box.style.display === 'block' ? 'none' : 'block';
+};
+
+/* ---------- per-test chart ----------
+   Margins are "how much capacity is left" (positive = safe, negative = exceeded);
+   failure risk runs the opposite way (low = good), so each bar is colored on its
+   own pass/fail logic rather than one shared rule. */
+let cableChartInstance = null;
+function renderTestChart(tensileMargin, crushMargin, abrasionMargin, failureRisk) {
+  const ctx = document.getElementById('cableTestChart');
+  if (cableChartInstance) cableChartInstance.destroy();
+  const margins = [tensileMargin, crushMargin, abrasionMargin];
+  const marginColors = margins.map(m => m >= 0 ? '#4de8c9' : '#ef6a52');
+  const riskColor = failureRisk < 30 ? '#4de8c9' : failureRisk < 70 ? '#f2b544' : '#ef6a52';
+  cableChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Tensile margin', 'Crush margin', 'Abrasion margin', 'Failure risk'],
+      datasets: [{
+        label: 'This run (%)',
+        data: [...margins, failureRisk],
+        backgroundColor: [...marginColors, riskColor]
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false },
+        title: { display: true, text: 'This run — margins (green = holding, red = exceeded) & risk', color: '#7f9aab', font: { size: 11 } } },
+      scales: {
+        x: { ticks: { color: '#7f9aab' }, grid: { color: '#163247' } },
+        y: { ticks: { color: '#7f9aab' }, grid: { color: '#163247' }, title: { display: true, text: '%', color: '#7f9aab' } }
+      }
+    }
+  });
+}
+
+/* ---------- fix-it search ----------
+   In a real deployment, anchor force / depth / abrasion are set by the route
+   and seabed, not something you'd dial down — so the real fix is picking the
+   right armor material for that layer's actual job. "Best" here means the
+   minimal-sufficient material: the cheapest/lightest option from the physically
+   sensible candidates for that role that still clears the requirement, not
+   reflexively jumping to the strongest material available (that's overbuilt and
+   not how real cable engineering works either). */
+const wireCandidates = ['steel', 'kevlarWire', 'titanium'];
+const tubeCandidates = ['copper', 'aluminum', 'titanium', 'steel'];
+const jacketCandidates = ['polyethylene', 'polyurethane', 'mylar', 'kevlarWire'];
+
+function minimalSufficient(candidates, propKey, requiredCapacity) {
+  let best = null;
+  candidates.forEach(key => {
+    const cap = armorMaterials[key][propKey] * 100;
+    if (cap >= requiredCapacity && (best === null || cap < armorMaterials[best][propKey] * 100)) best = key;
+  });
+  return best;
+}
+function strongestAvailable(candidates, propKey) {
+  return candidates.reduce((best, key) =>
+    (best === null || armorMaterials[key][propKey] > armorMaterials[best][propKey]) ? key : best, null);
+}
+
+function runTest() {
+  const depth = +document.getElementById('depth').value;
+  const anchor = +document.getElementById('anchor').value;
+  const abr = +document.getElementById('abr').value;
+
+  const wireLayerIdx = 2; // "Stranded steel wires" position by default layout
+  const tubeLayerIdx = 5; // copper/aluminum tube position
+  const jacketIdx = 0;
+
+  const tensileCapacity = armorMaterials[layerState[wireLayerIdx]].tensile * 100;
+  const crushCapacity = armorMaterials[layerState[tubeLayerIdx]].crush * 100;
+  const abrasionCapacity = armorMaterials[layerState[jacketIdx]].abrasion * 100;
+
+  const tensileMargin = Math.round(tensileCapacity - anchor);
+  const crushMargin = Math.round(crushCapacity - (depth / 6000) * 100);
+  const abrasionMargin = Math.round(abrasionCapacity - abr);
+
+  document.getElementById('rTensile').textContent = tensileMargin + '%';
+  document.getElementById('rCrush').textContent = crushMargin + '%';
+
+  // Only the computed rules (C1 tensile, C3 water/pressure, C4 abrasion) get a verdict.
+  // C2, C5, C6, C7, C8 stay neutral — real G.978 requirements this simulator doesn't model.
+  ['C1','C3','C4'].forEach(id => document.getElementById('rule-'+id).classList.remove('fired','passed'));
+
+  const v = document.getElementById('verdict');
+  v.style.display = 'block';
+  let failureRisk = 0;
+
+  if (tensileMargin < 0) {
+    document.getElementById('rule-C1').classList.add('fired');
+    v.className = 'verdict fail';
+    let msg = 'Rule C1 fired: anchor/trawler tension exceeds the wire armor\'s tensile capacity — this mirrors why fishing and anchor strikes (rule C5) cause most real subsea cable faults. The cable is severed at the armor level; nothing inside changes this outcome. ';
+    const fix = minimalSufficient(wireCandidates, 'tensile', anchor + 1);
+    if (fix && fix !== layerState[wireLayerIdx]) {
+      const newMargin = Math.round(armorMaterials[fix].tensile * 100 - anchor);
+      msg += 'Fix: swap the wire armor to ' + armorMaterials[fix].label + ' — that alone clears this force with a +' + newMargin + '% margin, without over-specifying beyond what\'s needed.';
+    } else {
+      const strongest = strongestAvailable(wireCandidates, 'tensile');
+      const cap = Math.round(armorMaterials[strongest].tensile * 100);
+      msg += 'None of the realistic wire materials in this catalog hold at this force — even ' + armorMaterials[strongest].label + ' only reaches ' + cap + '%. This force level (' + anchor + ') is above what any wire armor here can take; the route itself would need to avoid this hazard level.';
+    }
+    v.textContent = msg;
+    failureRisk = 100;
+    flashStrike();
+  } else {
+    document.getElementById('rule-C1').classList.add('passed');
+    if (crushMargin < 0) {
+      document.getElementById('rule-C3').classList.add('fired');
+      v.className = 'verdict fail';
+      let msg = 'Rule C3 fired: hydrostatic pressure at this depth exceeds the crush resistance of the current tube/water-barrier material — water ingress risk now dominates regardless of fiber toughness. ';
+      const requiredCap = (depth / 6000) * 100 + 1;
+      const fix = minimalSufficient(tubeCandidates, 'crush', requiredCap);
+      if (fix && fix !== layerState[tubeLayerIdx]) {
+        const newMargin = Math.round(armorMaterials[fix].crush * 100 - (depth / 6000) * 100);
+        msg += 'Fix: swap the conductive tube to ' + armorMaterials[fix].label + ' — that clears this depth with a +' + newMargin + '% margin.';
+      } else {
+        const strongest = strongestAvailable(tubeCandidates, 'crush');
+        const cap = Math.round(armorMaterials[strongest].crush * 100);
+        const maxDepth = Math.round((cap / 100) * 6000);
+        msg += 'None of the realistic tube materials hold at this depth — even ' + armorMaterials[strongest].label + ' only rates to about ' + maxDepth + 'm. This route would need to stay above that depth.';
+      }
+      v.textContent = msg;
+      failureRisk = 85;
+      squeezeCable();
+    } else {
+      document.getElementById('rule-C3').classList.add('passed');
+      failureRisk = Math.max(0, Math.min(100, Math.round((abr - abrasionMargin) / 2)));
+      if (abrasionMargin < 0) {
+        document.getElementById('rule-C4').classList.add('fired');
+        v.className = 'verdict warn';
+        let msg = 'Rule C4: armor holds against anchor and pressure, but the jacket\'s abrasion capacity is exceeded at this seabed activity level — expect gradual wear failure rather than a sudden break. ';
+        const fix = minimalSufficient(jacketCandidates, 'abrasion', abr + 1);
+        if (fix && fix !== layerState[jacketIdx]) {
+          const newMargin = Math.round(armorMaterials[fix].abrasion * 100 - abr);
+          msg += 'Fix: swap the outer jacket to ' + armorMaterials[fix].label + ' — that clears this abrasion level with a +' + newMargin + '% margin.';
+        } else {
+          const strongest = strongestAvailable(jacketCandidates, 'abrasion');
+          const cap = Math.round(armorMaterials[strongest].abrasion * 100);
+          msg += 'Even ' + armorMaterials[strongest].label + ', the toughest realistic jacket option here, only rates to ' + cap + '% — above that, expect scheduled maintenance/replacement rather than a permanent fix.';
+        }
+        v.textContent = msg;
+      } else {
+        document.getElementById('rule-C4').classList.add('passed');
+        v.className = 'verdict ok';
+        v.textContent = 'Clears C1, C3 and C4 with margin on tensile, pressure and abrasion at these conditions. This only covers the outer structure (see C2/C5–C8 below for the G.978 requirements this simulator doesn\'t compute) — pass the internal fiber core to the Fiber lab for its own test.';
+      }
+    }
+  }
+  document.getElementById('rRisk').textContent = failureRisk + '%';
+
+  renderTestChart(tensileMargin, crushMargin, abrasionMargin, failureRisk);
+
+  const saved = saveLogEntry({
+    lab: "cable",
+    params: { depth, anchor, abr, layers: [...layerState] },
+    results: { tensileMargin, crushMargin, abrasionMargin, failureRisk }
+  });
+
+  const log = document.getElementById('log');
+  const time = new Date(saved.timestamp).toLocaleTimeString();
+  const entry = document.createElement('div');
+  entry.className = 'entry';
+  entry.innerHTML = `<b>${saved.name}</b> (${time}) — depth ${depth}m, anchor ${anchor}, abrasion ${abr}% → risk ${failureRisk}%, tensile margin ${tensileMargin}%`;
+  if (log.firstChild && log.firstChild.textContent === 'No tests run yet.') log.innerHTML = '';
+  log.prepend(entry);
+}
+window.runTest = runTest;
+
+function flashStrike() {
+  const orig = cableGroup.position.clone();
+  let t = 0;
+  function shake() {
+    t += 1;
+    cableGroup.position.x = orig.x + (Math.random() - 0.5) * 0.08;
+    cableGroup.position.y = orig.y + (Math.random() - 0.5) * 0.08;
+    if (t < 15) requestAnimationFrame(shake); else cableGroup.position.copy(orig);
+  }
+  shake();
+}
+function squeezeCable() {
+  let t = 0;
+  function pulse() {
+    t += 1;
+    const s = 1 - Math.sin(t / 8) * 0.04;
+    cableGroup.scale.set(s, s, 1);
+    if (t < 40) requestAnimationFrame(pulse); else cableGroup.scale.set(1, 1, 1);
+  }
+  pulse();
+}
+
+window.applyPreset('Abyssal plain');
+</script>
+</body>
+</html>

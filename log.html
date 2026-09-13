@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Log & Analysis — Abyssal Glass</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .tabs{display:flex;gap:10px;margin-bottom:18px;}
+  .tab-btn{background:var(--panel2);border:1px solid var(--line2);color:var(--text-dim);padding:9px 16px;border-radius:5px;font-size:13px;cursor:pointer;}
+  .tab-btn.active{color:var(--bio);border-color:var(--bio);}
+  table.runs{width:100%;border-collapse:collapse;font-size:13px;}
+  table.runs th{text-align:left;color:var(--text-dim);font-family:var(--mono);font-size:11px;padding:8px 6px;border-bottom:1px solid var(--line2);text-transform:uppercase;}
+  table.runs td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  table.runs input[type=text]{background:var(--panel2);border:1px solid var(--line2);color:var(--text);border-radius:4px;padding:5px 8px;font-size:13px;width:150px;}
+  table.runs button.del{background:none;border:1px solid #5c2a1f;color:var(--coral);border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;}
+  table.runs button.del:hover{background:rgba(239,106,82,0.1);}
+  .empty-state{color:var(--text-dim);font-size:13px;padding:20px 0;}
+  canvas#chart{max-height:340px;}
+  .clear-btn{background:none;border:1px solid var(--line2);color:var(--text-dim);border-radius:5px;padding:8px 14px;font-size:12px;cursor:pointer;margin-top:14px;}
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">ABYSSAL GLASS</span>
+  <a class="navlink" href="index.html">Overview</a>
+  <a class="navlink" href="fiber.html">Fiber lab</a>
+  <a class="navlink" href="cable.html">Cable lab</a>
+  <a class="navlink active" href="log.html">Log &amp; analysis</a>
+</nav>
+<div class="wrap">
+  <header class="page-head">
+    <p class="eyebrow">LOG &amp; ANALYSIS</p>
+    <h1>Saved test runs</h1>
+    <p class="sub">Every run from either lab is saved here automatically, in this browser. Rename runs to keep track of what you changed, check the ones you want compared, and the chart below updates live.</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-fiber" onclick="window.switchTab('fiber')">Fiber runs</button>
+    <button class="tab-btn" id="tab-cable" onclick="window.switchTab('cable')">Cable runs</button>
+  </div>
+
+  <div class="panel">
+    <h2 class="section-title">Runs</h2>
+    <div id="tableWrap"></div>
+    <button class="clear-btn" onclick="window.clearAll()">Clear all runs in this tab</button>
+  </div>
+
+  <div class="panel">
+    <h2 class="section-title">Comparison chart</h2>
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script src="https://unpkg.com/chart.js@4.4.4/dist/chart.umd.js"></script>
+<script type="module">
+import { loadLog, renameLogEntry, deleteLogEntry, clearLog } from "./shared.js";
+
+let currentTab = "fiber";
+let chartInstance = null;
+
+window.switchTab = (t) => {
+  currentTab = t;
+  document.getElementById('tab-fiber').classList.toggle('active', t === 'fiber');
+  document.getElementById('tab-cable').classList.toggle('active', t === 'cable');
+  render();
+};
+
+window.clearAll = () => {
+  if (!confirm('Delete all saved ' + currentTab + ' runs? This cannot be undone.')) return;
+  clearLog(currentTab);
+  render();
+};
+
+window.doRename = (id, val) => { renameLogEntry(id, val); render(false); };
+window.doDelete = (id) => { deleteLogEntry(id); render(); };
+
+function render(rebuildTable = true) {
+  const all = loadLog().filter(r => r.lab === currentTab);
+  if (rebuildTable) renderTable(all);
+  renderChart(all);
+}
+
+function renderTable(runs) {
+  const wrap = document.getElementById('tableWrap');
+  if (!runs.length) {
+    wrap.innerHTML = `<div class="empty-state">No ${currentTab} runs saved yet. Go run a test in the ${currentTab === 'fiber' ? 'Fiber' : 'Cable'} lab — it'll show up here automatically.</div>`;
+    return;
+  }
+  const isFiber = currentTab === 'fiber';
+  const cols = isFiber
+    ? ['Name','When','Depth','Temp','Bend','Toughness','Signal loss','Risk','']
+    : ['Name','When','Depth','Anchor','Abrasion','Tensile margin','Crush margin','Risk',''];
+  let html = '<table class="runs"><thead><tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+  runs.forEach(r => {
+    const when = new Date(r.timestamp).toLocaleString();
+    if (isFiber) {
+      html += `<tr>
+        <td><input type="text" value="${escapeHtml(r.name)}" onchange="window.doRename('${r.id}', this.value)"></td>
+        <td>${when}</td>
+        <td>${r.params.depth}m</td>
+        <td>${r.params.temp}°C</td>
+        <td>${r.params.bend}%</td>
+        <td>${r.results.toughnessPct}%</td>
+        <td>${r.results.signalLoss} dB/km</td>
+        <td>${r.results.failureRisk}%</td>
+        <td><button class="del" onclick="window.doDelete('${r.id}')">Delete</button></td>
+      </tr>`;
+    } else {
+      html += `<tr>
+        <td><input type="text" value="${escapeHtml(r.name)}" onchange="window.doRename('${r.id}', this.value)"></td>
+        <td>${when}</td>
+        <td>${r.params.depth}m</td>
+        <td>${r.params.anchor}</td>
+        <td>${r.params.abr}%</td>
+        <td>${r.results.tensileMargin}%</td>
+        <td>${r.results.crushMargin}%</td>
+        <td>${r.results.failureRisk}%</td>
+        <td><button class="del" onclick="window.doDelete('${r.id}')">Delete</button></td>
+      </tr>`;
+    }
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderChart(runs) {
+  const ctx = document.getElementById('chart');
+  if (chartInstance) chartInstance.destroy();
+  if (!runs.length) return;
+  const ordered = [...runs].reverse(); // chronological left-to-right
+  const labels = ordered.map(r => r.name);
+  const isFiber = currentTab === 'fiber';
+  const datasets = isFiber ? [
+    { label: 'Fracture toughness %', data: ordered.map(r => r.results.toughnessPct), backgroundColor: '#4de8c9' },
+    { label: 'Signal loss (dB/km)', data: ordered.map(r => r.results.signalLoss), backgroundColor: '#f2b544' },
+    { label: 'Failure risk %', data: ordered.map(r => r.results.failureRisk), backgroundColor: '#ef6a52' }
+  ] : [
+    { label: 'Tensile margin %', data: ordered.map(r => r.results.tensileMargin), backgroundColor: '#4de8c9' },
+    { label: 'Crush margin %', data: ordered.map(r => r.results.crushMargin), backgroundColor: '#378add' },
+    { label: 'Failure risk %', data: ordered.map(r => r.results.failureRisk), backgroundColor: '#ef6a52' }
+  ];
+  chartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#d7e8ee' } } },
+      scales: {
+        x: { ticks: { color: '#7f9aab' }, grid: { color: '#163247' } },
+        y: { ticks: { color: '#7f9aab' }, grid: { color: '#163247' } }
+      }
+    }
+  });
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+render();
+</script>
+</body>
+</html>
