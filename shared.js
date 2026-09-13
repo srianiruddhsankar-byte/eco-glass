@@ -217,42 +217,6 @@ function defaultRunName(lab) {
   return (lab === "fiber" ? "Fiber" : "Cable") + " run " + runCounters[lab];
 }
 
-/* ---------- flat labeled cross-section diagram ----------
-   A static, numbered cutaway drawing — the classic encyclopedia/engineering-diagram
-   style (concentric rings + leader lines + a numbered legend), distinct from the
-   interactive rotating 3D model above it. Purely a rendering function: callers
-   pass rOuter/rInner as 0–1 fractions (outer-to-inner order) plus a raw hex color
-   number per layer, and per-lab style options so the two labs don't look identical. */
-export function crossSectionSVG(layerData, opts = {}) {
-  const size = opts.size || 320;
-  const cx = size / 2, cy = size / 2;
-  const R = opts.maxR || size * 0.34;
-  const leaderR = R * (opts.leaderScale || 1.34);
-  const n = layerData.length;
-  let rings = '';
-  layerData.forEach(L => {
-    const hex = '#' + L.color.toString(16).padStart(6, '0');
-    rings += `<circle cx="${cx}" cy="${cy}" r="${(L.rOuter * R).toFixed(1)}" fill="${hex}" stroke="${opts.ringStroke || '#02090f'}" stroke-width="${opts.ringStrokeWidth || 1}"/>`;
-  });
-  let leaders = '';
-  const startAngle = opts.startAngleDeg ?? -100;
-  layerData.forEach((L, i) => {
-    const midR = ((L.rOuter + L.rInner) / 2) * R;
-    const angle = (startAngle + i * (360 / n)) * Math.PI / 180;
-    const x1 = cx + Math.cos(angle) * midR, y1 = cy + Math.sin(angle) * midR;
-    const x2 = cx + Math.cos(angle) * leaderR, y2 = cy + Math.sin(angle) * leaderR;
-    const dash = opts.dashedLeaders ? ` stroke-dasharray="3,2"` : '';
-    leaders += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${opts.leaderColor || '#7f9aab'}" stroke-width="1"${dash}/>`;
-    if (opts.badgeShape === 'square') {
-      leaders += `<rect x="${(x2 - 10).toFixed(1)}" y="${(y2 - 10).toFixed(1)}" width="20" height="20" fill="${opts.badgeFill || '#0c2333'}" stroke="${opts.leaderColor || '#7f9aab'}" stroke-width="1"/>`;
-    } else {
-      leaders += `<circle cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="10" fill="${opts.badgeFill || '#0c2333'}" stroke="${opts.leaderColor || '#7f9aab'}" stroke-width="1"/>`;
-    }
-    leaders += `<text x="${x2.toFixed(1)}" y="${(y2 + 3.5).toFixed(1)}" font-size="10" font-family="${opts.fontFamily || 'monospace'}" fill="${opts.textColor || '#d7e8ee'}" text-anchor="middle">${i + 1}</text>`;
-  });
-  return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">${rings}${leaders}</svg>`;
-}
-
 export const validationExperiments = [
   {
     id: "V1",

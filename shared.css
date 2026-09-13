@@ -84,11 +84,3 @@ input[type=range]{width:100%;accent-color:var(--bio);}
 .log{max-height:160px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text-dim);}
 .log .entry{padding:7px 0;border-bottom:1px solid var(--line);}
 .log .entry b{color:var(--text);}
-
-.xsec-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;}
-.xsec-svg{flex:none;width:220px;height:220px;}
-.xsec-svg svg{width:100%;height:100%;}
-.xsec-legend{flex:1;min-width:200px;list-style:none;margin:0;padding:0;font-size:12.5px;line-height:1.7;}
-.xsec-legend li{display:flex;gap:8px;align-items:baseline;}
-.xsec-legend .xnum{font-family:var(--mono);font-size:10px;color:var(--text-dim);border:1px solid var(--line2);border-radius:50%;width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;}
-.xsec-note{font-size:11px;color:var(--text-dim);margin:12px 0 0;font-family:var(--mono);}
