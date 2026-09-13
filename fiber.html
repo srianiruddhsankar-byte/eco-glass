@@ -34,6 +34,15 @@
   </div>
 
   <div class="panel">
+    <h2 class="section-title">Reference cutaway diagram</h2>
+    <div class="xsec-wrap">
+      <div class="xsec-svg" id="xsecSvg"></div>
+      <ol class="xsec-legend" id="xsecLegend" style="list-style:none;padding:0;"></ol>
+    </div>
+    <p class="xsec-note">Flat schematic, outside-in — same layer order as the interactive model above, in the style of a scientific cross-section illustration rather than the cable lab's industrial cutaway.</p>
+  </div>
+
+  <div class="panel">
     <h2 class="section-title">Test conditions</h2>
     <div class="presets" id="presets"></div>
     <div class="grid3">
@@ -109,7 +118,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   COOK_GORDON_THRESHOLD, INTERFACE_TOUGHNESS_THRESHOLD, fiberMaterials, fiberLayers, quartzBaseline,
-  citations, fiberRules, validationExperiments, saveLogEntry
+  citations, fiberRules, validationExperiments, saveLogEntry, crossSectionSVG
 } from "./shared.js";
 
 /* ---------- state ---------- */
@@ -276,6 +285,7 @@ function buildFiber() {
   fiberGroup.rotation.y = 0.5;
 }
 buildFiber();
+renderLegend();
 
 /* click detection */
 const raycaster = new THREE.Raycaster();
@@ -321,8 +331,22 @@ function renderLegend() {
     return `<div class="row ${selectedLayer===i?'active':''}" onclick="window.selectLayerFromUI(${i})">
       <span class="sw" style="background:${hex}"></span>${L.name} — ${mat.label}</div>`;
   }).join('');
+  renderXsec();
 }
 window.selectLayerFromUI = (i) => selectLayer(i);
+
+function renderXsec() {
+  const layerData = fiberLayers.map((L, i) => ({
+    color: fiberMaterials[layerState[i]].color,
+    rOuter: layerR[i].rOuter / outerR,
+    rInner: layerR[i].rInner / outerR
+  }));
+  document.getElementById('xsecSvg').innerHTML = crossSectionSVG(layerData, {
+    leaderColor: '#4de8c9', badgeShape: 'circle', dashedLeaders: false, startAngleDeg: -90
+  });
+  document.getElementById('xsecLegend').innerHTML = fiberLayers.map((L, i) =>
+    `<li><span class="xnum">${i + 1}</span> ${L.name} — <span style="color:var(--text-dim)">${fiberMaterials[layerState[i]].label}</span></li>`).join('');
+}
 
 function renderDetail() {
   const card = document.getElementById('detailCard');

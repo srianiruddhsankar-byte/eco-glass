@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <title>Cable Lab — Abyssal Glass</title>
 <link rel="stylesheet" href="shared.css">
+<style>
+  /* Cable lab gets its own steel/industrial accent instead of the fiber lab's
+     bio-teal — same visual language, different subject, so the two labs read
+     as distinct at a glance rather than reskins of each other. */
+  :root{ --bio:#5aa9f2; --bio-dim:#1c3a54; }
+</style>
 </head>
 <body>
 <nav class="topnav">
@@ -31,6 +37,15 @@
       <div id="detailCard" class="detail-card"></div>
       <div id="detailCardEmpty" style="font-size:13px;color:var(--text-dim);">Click a layer in the 3D view or legend to inspect it.</div>
     </div>
+  </div>
+
+  <div class="panel">
+    <h2 class="section-title">Reference cutaway diagram</h2>
+    <div class="xsec-wrap">
+      <div class="xsec-svg" id="xsecSvg"></div>
+      <ol class="xsec-legend" id="xsecLegend" style="list-style:none;padding:0;"></ol>
+    </div>
+    <p class="xsec-note">Flat schematic, outside-in — same layer order as the interactive model above, drawn the way a cable-industry cutaway diagram usually is.</p>
   </div>
 
   <div class="panel">
@@ -89,7 +104,7 @@
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { cableLayers, cableRules, citations, saveLogEntry } from "./shared.js";
+import { cableLayers, cableRules, citations, saveLogEntry, crossSectionSVG } from "./shared.js";
 
 /* alt materials pool for exploration — properties are illustrative, not manufacturer datasheets */
 const armorMaterials = {
@@ -292,6 +307,7 @@ function buildCable() {
   cableGroup.rotation.y = 0.5;
 }
 buildCable();
+renderLegend();
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -328,8 +344,22 @@ function renderLegend() {
     return `<div class="row ${selectedLayer===i?'active':''}" onclick="window.selectLayerFromUI(${i})">
       <span class="sw" style="background:${hex}"></span>${L.name} — ${mat.label}</div>`;
   }).join('');
+  renderXsec();
 }
 window.selectLayerFromUI = (i) => selectLayer(i);
+
+function renderXsec() {
+  const layerData = cableLayers.map((L, i) => ({
+    color: armorMaterials[layerState[i]].color,
+    rOuter: layerR[i].rOuter / outerR,
+    rInner: layerR[i].rInner / outerR
+  }));
+  document.getElementById('xsecSvg').innerHTML = crossSectionSVG(layerData, {
+    leaderColor: '#5aa9f2', badgeShape: 'square', dashedLeaders: true, startAngleDeg: -90
+  });
+  document.getElementById('xsecLegend').innerHTML = cableLayers.map((L, i) =>
+    `<li><span class="xnum">${i + 1}</span> ${L.name} — <span style="color:var(--text-dim)">${armorMaterials[layerState[i]].label}</span></li>`).join('');
+}
 
 function renderDetail() {
   const card = document.getElementById('detailCard');
@@ -392,8 +422,8 @@ function renderTestChart(tensileMargin, crushMargin, abrasionMargin, failureRisk
   const ctx = document.getElementById('cableTestChart');
   if (cableChartInstance) cableChartInstance.destroy();
   const margins = [tensileMargin, crushMargin, abrasionMargin];
-  const marginColors = margins.map(m => m >= 0 ? '#4de8c9' : '#ef6a52');
-  const riskColor = failureRisk < 30 ? '#4de8c9' : failureRisk < 70 ? '#f2b544' : '#ef6a52';
+  const marginColors = margins.map(m => m >= 0 ? '#5aa9f2' : '#ef6a52');
+  const riskColor = failureRisk < 30 ? '#5aa9f2' : failureRisk < 70 ? '#f2b544' : '#ef6a52';
   cableChartInstance = new Chart(ctx, {
     type: 'bar',
     data: {
